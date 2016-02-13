@@ -195,6 +195,7 @@ func (s *Server) logPid() {
 // Start via a Go routine if needed.
 func (s *Server) Start() {
 	Noticef("Starting gnatsd version %s", VERSION)
+	Noticef("Server id: %s", s.info.ID)
 	s.running = true
 
 	// Log the pid to a file
