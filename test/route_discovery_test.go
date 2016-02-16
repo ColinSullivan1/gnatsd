@@ -4,6 +4,7 @@ package test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -109,6 +110,9 @@ func TestSeedMultipleRouteInfo(t *testing.T) {
 		t.Fatalf("Expected URL Host of %s, got %s\n", hp1, route.URL)
 	}
 
+	// The discovery will cause route2 to receive an additional INFO
+	route2Expect(infoRe)
+
 	routeSend2("PING\r\n")
 	route2Expect(pongRe)
 
@@ -192,6 +196,112 @@ func TestSeedSolicitWorks(t *testing.T) {
 	}
 	if ris[s2.Id()].IsConfigured == true {
 		t.Fatalf("Expected server not to be configured\n")
+	}
+}
+
+type serverInfo struct {
+	server *server.Server
+	opts   *server.Options
+}
+
+func checkConnected(t *testing.T, servers []serverInfo, current int) error {
+	s := servers[current]
+
+	// Grab Routez from monitor ports, make sure we are fully connected
+	url := fmt.Sprintf("http://%s:%d/", s.opts.Host, s.opts.HTTPPort)
+	rz := readHttpRoutez(t, url)
+	total := len(servers)
+	var ids []string
+	for i := 0; i < total; i++ {
+		if i == current {
+			continue
+		}
+		ids = append(ids, servers[i].server.Id())
+	}
+	ris, err := expectRidsNoFatal(t, true, rz, ids)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < total; i++ {
+		if i == current {
+			continue
+		}
+		s := servers[i]
+		if i == 0 && ris[s.server.Id()].IsConfigured == false {
+			return errors.New(fmt.Sprintf("Expected server %s:%d to be configured", s.opts.Host, s.opts.Port))
+		} else if i > 0 {
+			if ris[s.server.Id()].IsConfigured == true {
+				return errors.New(fmt.Sprintf("Expected server %s:%d not to be configured", s.opts.Host, s.opts.Port))
+			}
+		}
+	}
+	return nil
+}
+
+func TestStressSeedSolicitWorks(t *testing.T) {
+	s1, opts := runSeedServer(t)
+	defer s1.Shutdown()
+
+	// Create the routes string for others to connect to the seed.
+	routesStr := fmt.Sprintf("nats-route://%s:%d/", opts.ClusterHost, opts.ClusterPort)
+
+	s2Opts := nextServerOpts(opts)
+	s2Opts.Routes = server.RoutesFromStr(routesStr)
+
+	s3Opts := nextServerOpts(s2Opts)
+	s4Opts := nextServerOpts(s3Opts)
+
+	for i := 0; i < 20; i++ {
+		func() {
+			// Run these servers manually, because we want them to start and
+			// connect to s1 as fast as possible.
+
+			s2 := server.New(s2Opts)
+			if s2 == nil {
+				panic("No NATS Server object returned.")
+			}
+			defer s2.Shutdown()
+			go s2.Start()
+
+			s3 := server.New(s3Opts)
+			if s3 == nil {
+				panic("No NATS Server object returned.")
+			}
+			defer s3.Shutdown()
+			go s3.Start()
+
+			s4 := server.New(s4Opts)
+			if s4 == nil {
+				panic("No NATS Server object returned.")
+			}
+			defer s4.Shutdown()
+			go s4.Start()
+
+			serversInfo := []serverInfo{{s1, opts}, {s2, s2Opts}, {s3, s3Opts}, {s4, s4Opts}}
+
+			var err error
+			maxTime := time.Now().Add(2000 * time.Millisecond)
+			for time.Now().Before(maxTime) {
+				resetPreviousHTTPConnections()
+
+				for j := 0; j < len(serversInfo); j++ {
+					err = checkConnected(t, serversInfo, j)
+					// If error, start this for loop from beginning
+					if err != nil {
+						break
+					}
+				}
+				// All servers checked ok, we are done, otherwise, try again
+				// until time is up
+				if err == nil {
+					break
+				}
+			}
+			// Report error
+			if err != nil {
+				t.Fatalf("Error: %v", err)
+			}
+		}()
 	}
 }
 
@@ -310,9 +420,21 @@ func TestAuthSeedSolicitWorks(t *testing.T) {
 
 // Helper to check for correct route memberships
 func expectRids(t *testing.T, rz *server.Routez, rids []string) map[string]*server.RouteInfo {
+	ri, err := expectRidsNoFatal(t, false, rz, rids)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	return ri
+}
+
+func expectRidsNoFatal(t *testing.T, direct bool, rz *server.Routez, rids []string) (map[string]*server.RouteInfo, error) {
+	caller := 1
+	if !direct {
+		caller++
+	}
 	if len(rids) != rz.NumRoutes {
-		_, fn, line, _ := runtime.Caller(1)
-		t.Fatalf("[%s:%d] Expecting %d routes, got %d\n", fn, line, len(rids), rz.NumRoutes)
+		_, fn, line, _ := runtime.Caller(caller)
+		return nil, errors.New(fmt.Sprintf("[%s:%d] Expecting %d routes, got %d\n", fn, line, len(rids), rz.NumRoutes))
 	}
 	set := make(map[string]bool)
 	for _, v := range rids {
@@ -322,12 +444,12 @@ func expectRids(t *testing.T, rz *server.Routez, rids []string) map[string]*serv
 	ri := make(map[string]*server.RouteInfo)
 	for _, r := range rz.Routes {
 		if set[r.RemoteId] != true {
-			_, fn, line, _ := runtime.Caller(1)
-			t.Fatalf("[%s:%d] Route with rid %s unexpected, expected %+v\n", fn, line, r.RemoteId, rids)
+			_, fn, line, _ := runtime.Caller(caller)
+			return nil, errors.New(fmt.Sprintf("[%s:%d] Route with rid %s unexpected, expected %+v\n", fn, line, r.RemoteId, rids))
 		}
 		ri[r.RemoteId] = r
 	}
-	return ri
+	return ri, nil
 }
 
 // Helper to easily grab routez info.
@@ -416,14 +538,26 @@ func TestSeedReturnIPInsteadOfURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error getting host information from: %v, err=%v", route.URL, err)
 	}
-	if rhost == rc1Host {
-		t.Fatalf("Expected route url to include IP address, got %s", rhost)
+	if rhost != rc1Host {
+		t.Fatalf("Expected route's host to be %v, got %v", rc1Host, rhost)
+	}
+
+	if route.IP == "" {
+		t.Fatal("Expected an IP for the implicit route")
+	}
+	ripurl := strings.TrimPrefix(route.IP, "nats-route://")
+	rip, _, err := net.SplitHostPort(ripurl)
+	if err != nil {
+		t.Fatalf("Error getting hipost information from: %v, err=%v", route.IP, err)
+	}
+	if rip == rc1Host {
+		t.Fatalf("Expected route's ip to be different from host, got %v", rip)
 	}
 	addr, ok := rc1.RemoteAddr().(*net.TCPAddr)
 	if !ok {
 		t.Fatal("Unable to get IP address from route")
 	}
-	if rhost != addr.IP.String() {
+	if rip != addr.IP.String() {
 		t.Fatalf("Expected IP %s, got %s", addr.IP.String(), rhost)
 	}
 }

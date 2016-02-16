@@ -57,10 +57,9 @@ type client struct {
 	last  time.Time
 	parseState
 
-	route         *route
-	sendLocalSubs bool
-	debug         bool
-	trace         bool
+	route *route
+	debug bool
+	trace bool
 }
 
 func (c *client) String() (id string) {
@@ -300,6 +299,12 @@ func (c *client) maxPayloadViolation(sz int) {
 	c.Errorf("%s: %d vs %d", ErrMaxPayload.Error(), sz, c.mpay)
 	c.sendErr("Maximum Payload Violation")
 	c.closeConnection()
+}
+
+// Assume the lock is held upon entry.
+func (c *client) sendInfo(info []byte) {
+	c.bw.Write(info)
+	c.bw.Flush()
 }
 
 func (c *client) sendErr(err string) {

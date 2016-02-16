@@ -57,6 +57,7 @@ type Server struct {
 	clients       map[uint64]*client
 	routes        map[uint64]*client
 	remotes       map[string]*client
+	implPending   map[string]struct{}
 	totalClients  uint64
 	done          chan bool
 	start         time.Time
@@ -116,6 +117,7 @@ func New(opts *Options) *Server {
 	// For tracking routes and their remote ids
 	s.routes = make(map[uint64]*client)
 	s.remotes = make(map[string]*client)
+	s.implPending = make(map[string]struct{})
 
 	// Used to kick out all of the route
 	// connect Go routines.
@@ -482,7 +484,7 @@ func (s *Server) createClient(conn net.Conn) *client {
 	}
 
 	// Send our information.
-	s.sendInfo(c, info)
+	c.sendInfo(info)
 
 	// Unlock to register
 	c.mu.Unlock()
@@ -605,11 +607,6 @@ func tlsCipher(cs uint16) string {
 		return "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
 	}
 	return fmt.Sprintf("Unknown [%x]", cs)
-}
-
-// Assume the lock is held upon entry.
-func (s *Server) sendInfo(c *client, info []byte) {
-	c.nc.Write(info)
 }
 
 func (s *Server) checkClientAuth(c *client) bool {

@@ -121,7 +121,8 @@ func TestSendRouteSubAndUnsub(t *testing.T) {
 	defer rc.Close()
 
 	expectAuthRequired(t, rc)
-	setupRoute(t, rc, opts)
+	routeSend, _ := setupRoute(t, rc, opts)
+	routeSend("INFO {\"server_id\":\"ROUTER:xyz\"}\r\n")
 
 	// Send SUB via client connection
 	send("SUB foo 22\r\n")
@@ -305,6 +306,7 @@ func TestRouteQueueSemantics(t *testing.T) {
 
 	expectAuthRequired(t, route)
 	routeSend, routeExpect := setupRoute(t, route, opts)
+	routeSend("INFO {\"server_id\":\"ROUTER:xyz\"}\r\n")
 	expectMsgs := expectMsgsCommand(t, routeExpect)
 
 	// Express multiple interest on this route for foo, queue group bar.
@@ -532,7 +534,8 @@ func TestAutoUnsubPropagation(t *testing.T) {
 	defer route.Close()
 
 	expectAuthRequired(t, route)
-	_, routeExpect := setupRoute(t, route, opts)
+	routeSend, routeExpect := setupRoute(t, route, opts)
+	routeSend("INFO {\"server_id\":\"ROUTER:xyz\"}\r\n")
 
 	// Setup a local subscription
 	clientSend("SUB foo 2\r\n")
