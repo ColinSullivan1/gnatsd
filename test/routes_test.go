@@ -217,6 +217,7 @@ func TestRouteForwardsMsgToClients(t *testing.T) {
 	expectMsgs := expectMsgsCommand(t, clientExpect)
 
 	route := createRouteConn(t, opts.ClusterHost, opts.ClusterPort)
+	defer route.Close()
 	expectAuthRequired(t, route)
 	routeSend, _ := setupRoute(t, route, opts)
 
@@ -484,6 +485,7 @@ func TestRouteResendsLocalSubsOnReconnect(t *testing.T) {
 	clientExpect(pongRe)
 
 	route := createRouteConn(t, opts.ClusterHost, opts.ClusterPort)
+	defer route.Close()
 	routeSend, routeExpect := setupRouteEx(t, route, opts, "ROUTE:4222")
 
 	// Expect to see the local sub echoed through after we send our INFO.

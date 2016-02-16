@@ -90,6 +90,14 @@ func TestSeedMultipleRouteInfo(t *testing.T) {
 	// Now read back out the info from the seed route
 	buf := route2Expect(infoRe)
 
+	infoReceived := 1
+	if strings.Count(string(buf), "INFO {") == 2 {
+		infoReceived = 2
+		// Take the first
+		infos := string(buf)
+		buf = buf[0:strings.LastIndex(infos, "INFO {")]
+	}
+
 	info := server.Info{}
 	if err := json.Unmarshal(buf[4:], &info); err != nil {
 		t.Fatalf("Could not unmarshal route info: %v", err)
@@ -110,8 +118,9 @@ func TestSeedMultipleRouteInfo(t *testing.T) {
 		t.Fatalf("Expected URL Host of %s, got %s\n", hp1, route.URL)
 	}
 
-	// The discovery will cause route2 to receive an additional INFO
-	route2Expect(infoRe)
+	if infoReceived == 1 {
+		route2Expect(infoRe)
+	}
 
 	routeSend2("PING\r\n")
 	route2Expect(pongRe)
@@ -134,6 +143,11 @@ func TestSeedMultipleRouteInfo(t *testing.T) {
 
 	// Now read back out the info from the seed route
 	buf = route3Expect(infoRe)
+	if strings.Count(string(buf), "INFO {") == 2 {
+		// Take the first
+		infos := string(buf)
+		buf = buf[0:strings.LastIndex(infos, "INFO {")]
+	}
 
 	info = server.Info{}
 	if err := json.Unmarshal(buf[4:], &info); err != nil {
@@ -251,7 +265,7 @@ func TestStressSeedSolicitWorks(t *testing.T) {
 	s3Opts := nextServerOpts(s2Opts)
 	s4Opts := nextServerOpts(s3Opts)
 
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 10; i++ {
 		func() {
 			// Run these servers manually, because we want them to start and
 			// connect to s1 as fast as possible.
@@ -280,7 +294,7 @@ func TestStressSeedSolicitWorks(t *testing.T) {
 			serversInfo := []serverInfo{{s1, opts}, {s2, s2Opts}, {s3, s3Opts}, {s4, s4Opts}}
 
 			var err error
-			maxTime := time.Now().Add(2000 * time.Millisecond)
+			maxTime := time.Now().Add(5 * time.Second)
 			for time.Now().Before(maxTime) {
 				resetPreviousHTTPConnections()
 
@@ -516,6 +530,11 @@ func TestSeedReturnIPInsteadOfURL(t *testing.T) {
 
 	// Now read back out the info from the seed route
 	buf := route2Expect(infoRe)
+	if strings.Count(string(buf), "INFO {") == 2 {
+		// Take the first
+		infos := string(buf)
+		buf = buf[0:strings.LastIndex(infos, "INFO {")]
+	}
 
 	info := server.Info{}
 	if err := json.Unmarshal(buf[4:], &info); err != nil {
