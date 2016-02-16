@@ -292,16 +292,19 @@ func (s *Server) HandleRoutez(w http.ResponseWriter, r *http.Request) {
 			NumSubs:      r.subs.Count(),
 		}
 
+		if r.nc != nil {
+			if ip, ok := r.nc.(*net.TCPConn); ok {
+				addr := ip.RemoteAddr().(*net.TCPAddr)
+				ri.Port = addr.Port
+				ri.IP = addr.IP.String()
+			}
+		}
+
 		if subs == 1 {
 			ri.Subs = castToSliceString(r.subs.All())
 		}
 		r.mu.Unlock()
 
-		if ip, ok := r.nc.(*net.TCPConn); ok {
-			addr := ip.RemoteAddr().(*net.TCPAddr)
-			ri.Port = addr.Port
-			ri.IP = addr.IP.String()
-		}
 		rs.Routes = append(rs.Routes, ri)
 	}
 	s.mu.Unlock()
